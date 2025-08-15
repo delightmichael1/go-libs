@@ -45,9 +45,9 @@ func (l *ServerLogger) LogDebug() *zerolog.Event {
 	return l.Logger.Debug()
 }
 
-func (l *ServerLogger) LogWarn() *zerolog.Event {
-	return l.Logger.Warn()
-}
+// func (l *ServerLogger) LogWarn() *zerolog.Event {
+// 	return l.Logger.Warn()
+// }
 
 func (l *ServerLogger) LogFatal() *zerolog.Event {
 	return l.Logger.Fatal()
