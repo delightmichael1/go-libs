@@ -14,6 +14,11 @@ import (
 	"go.mongodb.org/mongo-driver/mongo/options"
 )
 
+type PopulateSpec struct {
+	Field         string
+	RefCollection string
+}
+
 func init() {
 	if os.Getenv("ENVIRONMENT") == "" || os.Getenv("ENVIRONMENT") != "production" {
 		err := godotenv.Load()
@@ -357,4 +362,40 @@ func InsertMany(ctx context.Context, collectionName string, data []any) (*mongo.
 		return nil, fmt.Errorf("error: %w", err)
 	}
 	return result, nil
+}
+
+func FindAndPopulate(ctx context.Context, collectionName string, filter bson.M, populates []PopulateSpec) ([]bson.M, error) {
+	client, err := getMongoClient()
+	if err != nil {
+		return nil, fmt.Errorf("error: %w", err)
+	}
+
+	db := client.Database(os.Getenv("MONGO_DATABASE_NAME"))
+	collection := db.Collection(collectionName)
+
+	cursor, err := collection.Find(ctx, filter)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query %s: %w", collectionName, err)
+	}
+	defer cursor.Close(ctx)
+
+	var docs []bson.M
+	if err := cursor.All(ctx, &docs); err != nil {
+		return nil, fmt.Errorf("failed to decode documents: %w", err)
+	}
+
+	// Populate requested fields
+	for i, doc := range docs {
+		for _, spec := range populates {
+			if id, ok := doc[spec.Field].(primitive.ObjectID); ok {
+				refColl := db.Collection(spec.RefCollection)
+				var refDoc bson.M
+				if err := refColl.FindOne(ctx, bson.M{"_id": id}).Decode(&refDoc); err == nil {
+					docs[i][spec.Field] = refDoc
+				}
+			}
+		}
+	}
+
+	return docs, nil
 }
