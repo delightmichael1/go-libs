@@ -400,7 +400,7 @@ func FindAndPopulate(ctx context.Context, collectionName string, filter bson.M, 
 	return docs, nil
 }
 
-func FindAndPopulateWithPagination(ctx context.Context, collectionName string, filter bson.M, populates []PopulateSpec, page int, pageSize int) ([]bson.M, error) {
+func FindAndPopulateWithPagination(ctx context.Context, collectionName string, filter bson.M, populates []PopulateSpec, page int, pageSize int, sort bson.M) ([]bson.M, error) {
 	client, err := getMongoClient()
 	if err != nil {
 		return nil, fmt.Errorf("error: %w", err)
@@ -419,6 +419,7 @@ func FindAndPopulateWithPagination(ctx context.Context, collectionName string, f
 	}
 	skip := int64((page - 1) * pageSize)
 	findOptions.SetSkip(skip)
+	findOptions.SetSort(sort)
 	findOptions.SetLimit(int64(pageSize))
 
 	cursor, err := collection.Find(ctx, filter, findOptions)
