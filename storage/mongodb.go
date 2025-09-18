@@ -399,3 +399,51 @@ func FindAndPopulate(ctx context.Context, collectionName string, filter bson.M, 
 
 	return docs, nil
 }
+
+func FindAndPopulateWithPagination(ctx context.Context, collectionName string, filter bson.M, populates []PopulateSpec, page int, pageSize int) ([]bson.M, error) {
+	client, err := getMongoClient()
+	if err != nil {
+		return nil, fmt.Errorf("error: %w", err)
+	}
+
+	db := client.Database(os.Getenv("MONGO_DATABASE_NAME"))
+	collection := db.Collection(collectionName)
+
+	findOptions := options.Find()
+
+	if pageSize <= 0 {
+		pageSize = 10
+	}
+	if page <= 0 {
+		page = 1
+	}
+	skip := int64((page - 1) * pageSize)
+	findOptions.SetSkip(skip)
+	findOptions.SetLimit(int64(pageSize))
+
+	cursor, err := collection.Find(ctx, filter, findOptions)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query %s: %w", collectionName, err)
+	}
+	defer cursor.Close(ctx)
+
+	var docs []bson.M
+	if err := cursor.All(ctx, &docs); err != nil {
+		return nil, fmt.Errorf("failed to decode documents: %w", err)
+	}
+
+	// Populate requested fields
+	for i, doc := range docs {
+		for _, spec := range populates {
+			if id, ok := doc[spec.Field].(primitive.ObjectID); ok {
+				refColl := db.Collection(spec.RefCollection)
+				var refDoc bson.M
+				if err := refColl.FindOne(ctx, bson.M{"_id": id}).Decode(&refDoc); err == nil {
+					docs[i][spec.Field] = refDoc
+				}
+			}
+		}
+	}
+
+	return docs, nil
+}
