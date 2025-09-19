@@ -364,7 +364,7 @@ func InsertMany(ctx context.Context, collectionName string, data []any) (*mongo.
 	return result, nil
 }
 
-func FindAndPopulate(ctx context.Context, collectionName string, filter bson.M, populates []PopulateSpec) ([]bson.M, error) {
+func FindAndPopulate(ctx context.Context, collectionName string, filter any, populates []PopulateSpec) ([]bson.M, error) {
 	client, err := getMongoClient()
 	if err != nil {
 		return nil, fmt.Errorf("error: %w", err)
@@ -400,7 +400,7 @@ func FindAndPopulate(ctx context.Context, collectionName string, filter bson.M, 
 	return docs, nil
 }
 
-func FindAndPopulateWithPagination(ctx context.Context, collectionName string, filter bson.M, populates []PopulateSpec, page int, pageSize int, sort bson.M) ([]bson.M, error) {
+func FindAndPopulateWithPagination(ctx context.Context, collectionName string, filter any, populates []PopulateSpec, page int, pageSize int, sort bson.M) ([]bson.M, error) {
 	client, err := getMongoClient()
 	if err != nil {
 		return nil, fmt.Errorf("error: %w", err)
@@ -449,7 +449,7 @@ func FindAndPopulateWithPagination(ctx context.Context, collectionName string, f
 	return docs, nil
 }
 
-func SumColumn(ctx context.Context, coll *mongo.Collection, field string, match bson.M) (float64, error) {
+func SumColumn(ctx context.Context, coll *mongo.Collection, field string, match any) (float64, error) {
 	pipeline := mongo.Pipeline{
 		bson.D{{Key: "$match", Value: match}},
 		bson.D{{Key: "$group", Value: bson.D{
