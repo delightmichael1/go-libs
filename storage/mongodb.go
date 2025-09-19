@@ -448,3 +448,35 @@ func FindAndPopulateWithPagination(ctx context.Context, collectionName string, f
 
 	return docs, nil
 }
+
+func SumColumn(ctx context.Context, coll *mongo.Collection, field string, match bson.M) (float64, error) {
+	pipeline := mongo.Pipeline{
+		bson.D{{Key: "$match", Value: match}},
+		bson.D{{Key: "$group", Value: bson.D{
+			{Key: "_id", Value: nil},
+			{Key: "total", Value: bson.D{{Key: "$sum", Value: "$" + field}}},
+		}}},
+	}
+
+	cursor, err := coll.Aggregate(ctx, pipeline)
+	if err != nil {
+		return 0, err
+	}
+	defer cursor.Close(ctx)
+
+	var results []bson.M
+	if err := cursor.All(ctx, &results); err != nil {
+		return 0, err
+	}
+
+	if len(results) == 0 {
+		return 0, nil
+	}
+
+	total, ok := results[0]["total"].(float64)
+	if !ok {
+		return 0, nil
+	}
+
+	return total, nil
+}
