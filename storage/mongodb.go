@@ -7,7 +7,6 @@ import (
 	"os"
 	"sync"
 
-	"github.com/joho/godotenv"
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/primitive"
 	"go.mongodb.org/mongo-driver/mongo"
@@ -17,15 +16,6 @@ import (
 type PopulateSpec struct {
 	Field         string
 	RefCollection string
-}
-
-func init() {
-	if os.Getenv("ENVIRONMENT") == "" || os.Getenv("ENVIRONMENT") != "production" {
-		err := godotenv.Load()
-		if err != nil {
-			log.Printf("Warning: Error loading .env file: %v", err)
-		}
-	}
 }
 
 var mongoClientInstance *mongo.Client
@@ -78,6 +68,39 @@ func CheckCollectionExists(ctx context.Context, collectionName string) (string, 
 	}
 
 	return "Collection " + collectionName + " created successfully", nil
+}
+
+func GetCollectionRef(ctx context.Context, collectionName string) *mongo.Collection {
+	client, err := getMongoClient()
+	if err != nil {
+		log.Printf("Failed to get mongo client: %v", err)
+		return nil
+	}
+	db := client.Database(os.Getenv("MONGO_DATABASE_NAME"))
+	return db.Collection(collectionName)
+}
+
+func AggregateDocuments(ctx context.Context, collectionName string, pipeline mongo.Pipeline) ([]bson.M, error) {
+	client, err := getMongoClient()
+	if err != nil {
+		return nil, fmt.Errorf("error: %w", err)
+	}
+
+	db := client.Database(os.Getenv("MONGO_DATABASE_NAME"))
+	collection := db.Collection(collectionName)
+
+	cursor, err := collection.Aggregate(ctx, pipeline)
+	if err != nil {
+		return nil, fmt.Errorf("failed to aggregate documents: %w", err)
+	}
+	defer cursor.Close(ctx)
+
+	var results []bson.M
+	if err := cursor.All(ctx, &results); err != nil {
+		return nil, fmt.Errorf("failed to decode results: %w", err)
+	}
+
+	return results, nil
 }
 
 func InsertData(ctx context.Context, collectionName string, data any) (*mongo.InsertOneResult, error) {
