@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"log"
-	"os"
 	"sync"
 
 	"go.mongodb.org/mongo-driver/bson"
@@ -18,30 +17,56 @@ type PopulateSpec struct {
 	RefCollection string
 }
 
-var mongoClientInstance *mongo.Client
-var clientInit sync.Once
+type Config struct {
+	URI          string
+	DatabaseName string
+}
 
-func getMongoClient() (*mongo.Client, error) {
-	var err error
+var (
+	mongoClientInstance *mongo.Client
+	databaseName        string
+	clientInit          sync.Once
+	configError         error
+)
+
+func Initialize(cfg Config) error {
 	clientInit.Do(func() {
-		clientOptions := options.Client().ApplyURI(os.Getenv("MONGODB_URI"))
-		mongoClientInstance, err = mongo.Connect(context.Background(), clientOptions)
-		if err != nil {
-			log.Printf("Failed to initialize MongoDB client: %v", err)
+		if cfg.URI == "" {
+			configError = fmt.Errorf("MongoDB URI cannot be empty")
+			return
+		}
+		if cfg.DatabaseName == "" {
+			configError = fmt.Errorf("database name cannot be empty")
+			return
+		}
+
+		databaseName = cfg.DatabaseName
+		clientOptions := options.Client().ApplyURI(cfg.URI)
+		mongoClientInstance, configError = mongo.Connect(context.Background(), clientOptions)
+		if configError != nil {
+			log.Printf("Failed to initialize MongoDB client: %v", configError)
 			return
 		}
 
 		if pingErr := mongoClientInstance.Ping(context.Background(), nil); pingErr != nil {
 			log.Printf("Failed to ping MongoDB: %v", pingErr)
-			err = pingErr
+			configError = pingErr
+			return
 		}
 
 		log.Println("Connected to DB")
 	})
-	if err != nil {
-		return nil, err
+	return configError
+}
+
+func getMongoClient() (*mongo.Client, error) {
+	if mongoClientInstance == nil {
+		return nil, fmt.Errorf("MongoDB client not initialized. Call Initialize() first")
 	}
-	return mongoClientInstance, err
+	if configError != nil {
+		return nil, configError
+	}
+	return mongoClientInstance, nil
 }
 
 func CheckCollectionExists(ctx context.Context, collectionName string) (string, error) {
@@ -50,7 +75,7 @@ func CheckCollectionExists(ctx context.Context, collectionName string) (string, 
 		return "", fmt.Errorf("error: %w", connectionError)
 	}
 
-	db := client.Database(os.Getenv("MONGO_DATABASE_NAME"))
+	db := client.Database(databaseName)
 
 	collections, err := db.ListCollectionNames(ctx, bson.M{})
 	if err != nil {
@@ -76,7 +101,7 @@ func GetCollectionRef(ctx context.Context, collectionName string) *mongo.Collect
 		log.Printf("Failed to get mongo client: %v", err)
 		return nil
 	}
-	db := client.Database(os.Getenv("MONGO_DATABASE_NAME"))
+	db := client.Database(databaseName)
 	return db.Collection(collectionName)
 }
 
@@ -86,7 +111,7 @@ func AggregateDocuments(ctx context.Context, collectionName string, pipeline mon
 		return nil, fmt.Errorf("error: %w", err)
 	}
 
-	db := client.Database(os.Getenv("MONGO_DATABASE_NAME"))
+	db := client.Database(databaseName)
 	collection := db.Collection(collectionName)
 
 	cursor, err := collection.Aggregate(ctx, pipeline)
@@ -109,7 +134,7 @@ func InsertData(ctx context.Context, collectionName string, data any) (*mongo.In
 		return nil, fmt.Errorf("error: %w", connectionError)
 	}
 
-	db := client.Database(os.Getenv("MONGO_DATABASE_NAME"))
+	db := client.Database(databaseName)
 	collection := db.Collection(collectionName)
 
 	result, err := collection.InsertOne(ctx, data)
@@ -126,7 +151,7 @@ func FindData(ctx context.Context, collectionName string, filter any, page int, 
 		return nil, fmt.Errorf("error: %w", connectionError)
 	}
 
-	db := client.Database(os.Getenv("MONGO_DATABASE_NAME"))
+	db := client.Database(databaseName)
 	collection := db.Collection(collectionName)
 
 	skip := (page - 1) * pageSize
@@ -161,7 +186,7 @@ func FindDataNoPagination(ctx context.Context, collectionName string, filter any
 		return nil, fmt.Errorf("error: %w", connectionError)
 	}
 
-	db := client.Database(os.Getenv("MONGO_DATABASE_NAME"))
+	db := client.Database(databaseName)
 	collection := db.Collection(collectionName)
 
 	findOptions := options.Find()
@@ -191,7 +216,7 @@ func FindSortedData(ctx context.Context, collectionName string, filter any, page
 		return nil, fmt.Errorf("error: %w", connectionError)
 	}
 
-	db := client.Database(os.Getenv("MONGO_DATABASE_NAME"))
+	db := client.Database(databaseName)
 	collection := db.Collection(collectionName)
 
 	skip := (page - 1) * pageSize
@@ -237,7 +262,7 @@ func FindOne(ctx context.Context, collectionName string, filter any) (any, error
 		return nil, fmt.Errorf("error: %w", connectionError)
 	}
 
-	db := client.Database(os.Getenv("MONGO_DATABASE_NAME"))
+	db := client.Database(databaseName)
 	collection := db.Collection(collectionName)
 
 	var result bson.M
@@ -256,7 +281,7 @@ func FindAllData(ctx context.Context, collectionName string, page int, pageSize 
 		return nil, fmt.Errorf("error: %w", connectionError)
 	}
 
-	db := client.Database(os.Getenv("MONGO_DATABASE_NAME"))
+	db := client.Database(databaseName)
 	collection := db.Collection(collectionName)
 
 	skip := (page - 1) * pageSize
@@ -290,7 +315,7 @@ func UpdateOne(ctx context.Context, collectionName string, filter any, update an
 		return nil, fmt.Errorf("error: %w", connectionError)
 	}
 
-	db := client.Database(os.Getenv("MONGO_DATABASE_NAME"))
+	db := client.Database(databaseName)
 	collection := db.Collection(collectionName)
 
 	updateDoc := bson.M{"$set": update}
@@ -309,7 +334,7 @@ func DeleteOne(ctx context.Context, collectionName string, filter any) (*mongo.D
 		return nil, fmt.Errorf("error: %w", connectionError)
 	}
 
-	db := client.Database(os.Getenv("MONGO_DATABASE_NAME"))
+	db := client.Database(databaseName)
 	collection := db.Collection(collectionName)
 
 	result, err := collection.DeleteOne(ctx, filter)
@@ -326,7 +351,7 @@ func DeleteMany(ctx context.Context, collectionName string, filter any) (*mongo.
 		return nil, fmt.Errorf("error: %w", connectionError)
 	}
 
-	db := client.Database(os.Getenv("MONGO_DATABASE_NAME"))
+	db := client.Database(databaseName)
 	collection := db.Collection(collectionName)
 
 	result, err := collection.DeleteMany(ctx, filter)
@@ -343,7 +368,7 @@ func CountDocuments(ctx context.Context, collectionName string, filter any) (int
 		return 0, fmt.Errorf("error: %w", connectionError)
 	}
 
-	db := client.Database(os.Getenv("MONGO_DATABASE_NAME"))
+	db := client.Database(databaseName)
 	collection := db.Collection(collectionName)
 
 	count, err := collection.CountDocuments(ctx, filter)
@@ -360,7 +385,7 @@ func DeleteAllData(ctx context.Context, collectionName string) error {
 		return fmt.Errorf("error: %w", connectionError)
 	}
 
-	db := client.Database(os.Getenv("MONGO_DATABASE_NAME"))
+	db := client.Database(databaseName)
 	collection := db.Collection(collectionName)
 
 	_, err := collection.DeleteMany(ctx, bson.M{})
@@ -377,7 +402,7 @@ func InsertMany(ctx context.Context, collectionName string, data []any) (*mongo.
 		return nil, fmt.Errorf("error: %w", connectionError)
 	}
 
-	db := client.Database(os.Getenv("MONGO_DATABASE_NAME"))
+	db := client.Database(databaseName)
 	collection := db.Collection(collectionName)
 	result, err := collection.InsertMany(ctx, data)
 
@@ -393,7 +418,7 @@ func FindAndPopulate(ctx context.Context, collectionName string, filter any, pop
 		return nil, fmt.Errorf("error: %w", err)
 	}
 
-	db := client.Database(os.Getenv("MONGO_DATABASE_NAME"))
+	db := client.Database(databaseName)
 	collection := db.Collection(collectionName)
 
 	cursor, err := collection.Find(ctx, filter)
@@ -429,7 +454,7 @@ func FindAndPopulateWithPagination(ctx context.Context, collectionName string, f
 		return nil, fmt.Errorf("error: %w", err)
 	}
 
-	db := client.Database(os.Getenv("MONGO_DATABASE_NAME"))
+	db := client.Database(databaseName)
 	collection := db.Collection(collectionName)
 
 	findOptions := options.Find()
