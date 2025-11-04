@@ -528,3 +528,68 @@ func SumColumn(ctx context.Context, coll *mongo.Collection, field string, match 
 
 	return total, nil
 }
+
+func CreateTTLIndex(ctx context.Context, collectionName string, fieldName string, expireAfterSeconds int32) error {
+	client, err := getMongoClient()
+	if err != nil {
+		return fmt.Errorf("error getting mongo client: %w", err)
+	}
+
+	db := client.Database(databaseName)
+	collection := db.Collection(collectionName)
+
+	indexModel := mongo.IndexModel{
+		Keys:    bson.D{{Key: fieldName, Value: 1}}, // 1 for ascending order
+		Options: options.Index().SetExpireAfterSeconds(expireAfterSeconds),
+	}
+
+	indexName, err := collection.Indexes().CreateOne(ctx, indexModel)
+	if err != nil {
+		return fmt.Errorf("failed to create TTL index on %s.%s: %w", collectionName, fieldName, err)
+	}
+
+	log.Printf("TTL index '%s' created successfully on %s.%s (expires after %d seconds)",
+		indexName, collectionName, fieldName, expireAfterSeconds)
+	return nil
+}
+
+func EnsureTTLIndex(ctx context.Context, collectionName string, fieldName string, expireAfterSeconds int32) error {
+	client, err := getMongoClient()
+	if err != nil {
+		return fmt.Errorf("error getting mongo client: %w", err)
+	}
+
+	db := client.Database(databaseName)
+	collection := db.Collection(collectionName)
+
+	cursor, err := collection.Indexes().List(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to list indexes: %w", err)
+	}
+	defer cursor.Close(ctx)
+
+	var indexes []bson.M
+	if err := cursor.All(ctx, &indexes); err != nil {
+		return fmt.Errorf("failed to decode indexes: %w", err)
+	}
+
+	for _, index := range indexes {
+		if key, ok := index["key"].(bson.M); ok {
+			if _, hasField := key[fieldName]; hasField {
+				if expireAfter, ok := index["expireAfterSeconds"].(int32); ok {
+					if expireAfter == expireAfterSeconds {
+						log.Printf("TTL index already exists on %s.%s with correct settings", collectionName, fieldName)
+						return nil
+					}
+					indexName := index["name"].(string)
+					if _, err := collection.Indexes().DropOne(ctx, indexName); err != nil {
+						return fmt.Errorf("failed to drop existing TTL index: %w", err)
+					}
+					log.Printf("Dropped existing TTL index on %s.%s to recreate with new settings", collectionName, fieldName)
+				}
+			}
+		}
+	}
+
+	return CreateTTLIndex(ctx, collectionName, fieldName, expireAfterSeconds)
+}

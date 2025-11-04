@@ -54,15 +54,3 @@ func EnsureNameIndexes(collection *mongo.Collection) {
 		log.Fatalf("Failed to create name indexes: %v", err)
 	}
 }
-
-func CreateTTLIndex(collection *mongo.Collection) {
-	indexModel := mongo.IndexModel{
-		Keys:    bson.M{"createdAt": 1},
-		Options: options.Index().SetExpireAfterSeconds(86400),
-	}
-
-	_, err := collection.Indexes().CreateOne(context.Background(), indexModel)
-	if err != nil {
-		log.Fatalf("Failed to create name indexes: %v", err)
-	}
-}
