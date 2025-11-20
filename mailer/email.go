@@ -171,8 +171,9 @@ func SendEmailWithMultipartFiles(mailto string, subject string, bodyType string,
 			return "", fmt.Errorf("failed to open file %s: %w", fileHeader.Filename, err)
 		}
 
-		// Create a temporary file to store the upload
-		tmpFile, err := os.CreateTemp("", filepath.Base(fileHeader.Filename))
+		// Create a temporary file with the original filename to preserve extension
+		tmpDir := os.TempDir()
+		tmpFile, err := os.Create(filepath.Join(tmpDir, fileHeader.Filename))
 		if err != nil {
 			log.Printf("Error creating temp file for %s: %v\n", fileHeader.Filename, err)
 			file.Close()
